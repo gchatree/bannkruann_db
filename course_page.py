@@ -20,6 +20,7 @@ def Exec_Sql(sql):
 def containers(page):
     # Define styles
     text_size = 13
+    Icon_Size = 15
     field_height = 50
     class_options = ["อ.3", "ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6", "ม.1", "ม.2", "ม.3"]
     day_options = ["เสาร์", "อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์"]
@@ -269,15 +270,21 @@ def containers(page):
                                         ft.IconButton(
                                             icon=ft.Icons.SAVE,
                                             on_click=lambda e, idx=index: save_edit_record(e, idx),
-                                            visible=index == editing_index
+                                            visible=index == editing_index,
+                                            icon_size = Icon_Size
                                         ),
                                         ft.IconButton(
                                             icon=ft.Icons.EDIT,
                                             on_click=lambda e, idx=index: edit_record(idx),
-                                            visible=index != editing_index
+                                            visible=index != editing_index,
+                                            icon_size = Icon_Size
                                         ),
-                                        ft.IconButton(ft.Icons.COPY_OUTLINED, on_click=lambda e, idx=index: copy_record(idx)),
-                                        ft.IconButton(ft.Icons.DELETE, on_click=lambda e, idx=index: delete_record(idx)),
+                                        ft.IconButton(ft.Icons.COPY_OUTLINED, on_click=lambda e, 
+                                            idx=index: copy_record(idx),
+                                            icon_size = Icon_Size),
+                                        ft.IconButton(ft.Icons.DELETE, on_click=lambda e, 
+                                            idx=index: delete_record(idx),
+                                            icon_size = Icon_Size),
                                     ],
                                     alignment=ft.MainAxisAlignment.START,
                                     spacing=0,

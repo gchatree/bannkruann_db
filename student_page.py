@@ -164,6 +164,27 @@ def containers():
                                 ],
                                 spacing=5,
                             ),
+                            ft.Row(
+                                [
+                                    ft.ElevatedButton(
+                                        text="Enroll",
+                                        icon="APP_REGISTRATION",
+                                        color=yellow,
+                                        bgcolor=navy_blue,
+                                        icon_color=yellow,
+                                        width=150
+                                    ),
+                                    ft.ElevatedButton(
+                                        text="Payment",
+                                        icon="PAYMENT",
+                                        color=yellow,
+                                        bgcolor=navy_blue,
+                                        icon_color=yellow,
+                                        width = 150
+                                    ),
+                                ],alignment=ft.MainAxisAlignment.START
+
+                            )
                         ]
                     ),
                 ),

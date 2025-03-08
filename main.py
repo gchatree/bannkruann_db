@@ -230,4 +230,5 @@ def main(page: ft.Page):
         )
     )
 
-ft.app(target=main,assets_dir='assets',view = 'flet_app_web', port=8888)
+ft.app(target=main,assets_dir='assets')
+# ft.app(target=main,assets_dir='assets',view = 'flet_app_web', port=8888)

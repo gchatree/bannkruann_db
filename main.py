@@ -77,7 +77,7 @@ def main(page: ft.Page):
             #     ft.Container(content=ft.Text("Student Info 1"), expand=True, bgcolor="#d9d9d9"),
             #     ft.Container(content=ft.Text("Student Info 2"), expand=True, bgcolor="#b3b3b3"),
             # ])
-            return student_page.containers()
+            return student_page.containers(page)
         
         elif page_name == "Courses":
             # return ft.Column([

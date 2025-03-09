@@ -101,6 +101,12 @@ def containers(page):
     parent_tel_input = ft.TextField(bgcolor=white, height=40)
     parent_line_input = ft.TextField(bgcolor=white, height=40)
     parent_facebook_input = ft.TextField(bgcolor=white, height=40)
+    parent_address_input = ft.TextField(bgcolor=white, height=40)  # New field: House Number
+    parent_mu_input = ft.TextField(bgcolor=white, height=40)       # New field: Village
+    parent_tum_input = ft.TextField(bgcolor=white, height=40)      # New field: Sub-district
+    parent_amp_input = ft.TextField(bgcolor=white, height=40)      # New field: District
+    parent_prov_input = ft.TextField(bgcolor=white, height=40)     # New field: Province
+    parent_post_input = ft.TextField(bgcolor=white, height=40)     # New field: Postal Code
 
     # Function to create editable student fields
     def create_editable_student_fields(student):
@@ -179,6 +185,12 @@ def containers(page):
             parent_tel_input.value = student["M_Tel"]
             parent_line_input.value = student["line"]
             parent_facebook_input.value = student["facebook"]
+            parent_address_input.value = student.get("H_Adr", "")  # New field
+            parent_mu_input.value = student.get("H_Mu", "")        # New field
+            parent_tum_input.value = student.get("H_Tum", "")      # New field
+            parent_amp_input.value = student.get("H_Amp", "")      # New field
+            parent_prov_input.value = student.get("H_Prov", "")    # New field
+            parent_post_input.value = student.get("H_Post", "")    # New field
             
             return ft.Column(
                 controls=[
@@ -214,6 +226,40 @@ def containers(page):
                             ),
                             ft.Column(
                                 [ft.Text("Facebook", size=13), parent_facebook_input],
+                                expand=1, spacing=0
+                            ),
+                        ],
+                        spacing=5,
+                    ),
+                    ft.Row(
+                        [
+                            ft.Column(
+                                [ft.Text("บ้านเลขที่", size=13), parent_address_input],
+                                expand=1, spacing=0
+                            ),
+                            ft.Column(
+                                [ft.Text("หมู่", size=13), parent_mu_input],
+                                expand=1, spacing=0
+                            ),
+                            ft.Column(
+                                [ft.Text("ตำบล", size=13), parent_tum_input],
+                                expand=1, spacing=0
+                            ),
+                        ],
+                        spacing=5,
+                    ),
+                    ft.Row(
+                        [
+                            ft.Column(
+                                [ft.Text("อำเภอ", size=13), parent_amp_input],
+                                expand=1, spacing=0
+                            ),
+                            ft.Column(
+                                [ft.Text("จังหวัด", size=13), parent_prov_input],
+                                expand=1, spacing=0
+                            ),
+                            ft.Column(
+                                [ft.Text("รหัสไปรษณีย์", size=13), parent_post_input],
                                 expand=1, spacing=0
                             ),
                         ],
@@ -343,6 +389,40 @@ def containers(page):
                         ],
                         spacing=5,
                     ),
+                    ft.Row(
+                        [
+                            ft.Column(
+                                [ft.Text("บ้านเลขที่", size=13), ft.TextField(value=student.get("H_Adr", ""), read_only=True, bgcolor=white, height=40)],
+                                expand=1, spacing=0
+                            ),
+                            ft.Column(
+                                [ft.Text("หมู่", size=13), ft.TextField(value=student.get("H_Mu", ""), read_only=True, bgcolor=white, height=40)],
+                                expand=1, spacing=0
+                            ),
+                            ft.Column(
+                                [ft.Text("ตำบล", size=13), ft.TextField(value=student.get("H_Tum", ""), read_only=True, bgcolor=white, height=40)],
+                                expand=1, spacing=0
+                            ),
+                        ],
+                        spacing=5,
+                    ),
+                    ft.Row(
+                        [
+                            ft.Column(
+                                [ft.Text("อำเภอ", size=13), ft.TextField(value=student.get("H_Amp", ""), read_only=True, bgcolor=white, height=40)],
+                                expand=1, spacing=0
+                            ),
+                            ft.Column(
+                                [ft.Text("จังหวัด", size=13), ft.TextField(value=student.get("H_Prov", ""), read_only=True, bgcolor=white, height=40)],
+                                expand=1, spacing=0
+                            ),
+                            ft.Column(
+                                [ft.Text("รหัสไปรษณีย์", size=13), ft.TextField(value=student.get("H_Post", ""), read_only=True, bgcolor=white, height=40)],
+                                expand=1, spacing=0
+                            ),
+                        ],
+                        spacing=5,
+                    ),
                 ]
             )
         else:
@@ -395,10 +475,13 @@ def containers(page):
                 
                 # First, insert the parent data WITH explicit P_ID
                 parent_sql = f"""
-                    INSERT INTO Parent (P_ID, M_Name, M_SurName, M_Tel, line, facebook)
+                    INSERT INTO Parent (P_ID, M_Name, M_SurName, M_Tel, line, facebook, H_Adr, H_Mu, H_Tum, H_Amp, H_Prov, H_Post)
                     VALUES ({next_p_id}, '{parent_name_input.value}', '{parent_surname_input.value}', 
                             '{parent_tel_input.value}', '{parent_line_input.value}', 
-                            '{parent_facebook_input.value}')
+                            '{parent_facebook_input.value}', '{parent_address_input.value}', 
+                            '{parent_mu_input.value}', '{parent_tum_input.value}', 
+                            '{parent_amp_input.value}', '{parent_prov_input.value}', 
+                            '{parent_post_input.value}')
                 """
                 Exec_Sql(parent_sql)
                 
@@ -447,7 +530,13 @@ def containers(page):
                     M_SurName = '{parent_surname_input.value}', 
                     M_Tel = '{parent_tel_input.value}', 
                     line = '{parent_line_input.value}', 
-                    facebook = '{parent_facebook_input.value}' 
+                    facebook = '{parent_facebook_input.value}',
+                    H_Adr = '{parent_address_input.value}', 
+                    H_Mu = '{parent_mu_input.value}', 
+                    H_Tum = '{parent_tum_input.value}', 
+                    H_Amp = '{parent_amp_input.value}', 
+                    H_Prov = '{parent_prov_input.value}', 
+                    H_Post = '{parent_post_input.value}' 
                 WHERE P_ID = {parent_id}
             """
             Exec_Sql(sql)
@@ -545,7 +634,13 @@ def containers(page):
             "M_SurName": "",
             "M_Tel": "",
             "line": "",
-            "facebook": ""
+            "facebook": "",
+            "H_Adr": "",  # New field
+            "H_Mu": "",   # New field
+            "H_Tum": "",  # New field
+            "H_Amp": "",  # New field
+            "H_Prov": "", # New field
+            "H_Post": ""  # New field
         }
         
         # Set student ID field
@@ -563,6 +658,12 @@ def containers(page):
         parent_tel_input.value = ""
         parent_line_input.value = ""
         parent_facebook_input.value = ""
+        parent_address_input.value = ""  # New field
+        parent_mu_input.value = ""       # New field
+        parent_tum_input.value = ""      # New field
+        parent_amp_input.value = ""      # New field
+        parent_prov_input.value = ""     # New field
+        parent_post_input.value = ""     # New field
         
         # Enable edit mode for both student and parent
         editing_student[0] = True

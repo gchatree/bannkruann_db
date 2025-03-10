@@ -93,6 +93,7 @@ def containers(page):
 
     # Containers to hold dynamic content
     student_info_content = ft.Container()
+    student_info_content.bgcolor=grey
     parent_info_content = ft.Container()
 
     # Edit buttons
@@ -917,7 +918,7 @@ def containers(page):
     # Parent Info Container
     parent_info_container = ft.Container(
         margin=ft.margin.only(10, 0, 10, 0),
-        padding=0,
+        padding=ft.padding.only(0,0,0,10),
         border_radius=15,
         bgcolor=grey,
         content=ft.Column(

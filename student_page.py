@@ -1,6 +1,7 @@
 import flet as ft
 import sqlite3
 import json
+import os
 
 def Exec_Sql(sql):
     conn = sqlite3.connect("Bannkruann.db")
@@ -24,6 +25,23 @@ def max_id(data, id_name):
             maxvalue = int(s[id_name])
             maxitem = s
     return maxitem 
+
+class AddressManager:
+    def __init__(self, filepath="./assets/data/thailand_data.json"):
+        with open(filepath, "r", encoding="utf-8") as f:
+            self.data = json.load(f)
+    
+    def get_provinces(self):
+        return list(self.data.keys())
+    
+    def get_districts(self, province):
+        return list(self.data.get(province, {}).keys())
+    
+    def get_subdistricts(self, province, district):
+        return list(self.data.get(province, {}).get(district, {}).keys())
+    
+    def get_postal_code(self, province, district, subdistrict):
+        return self.data.get(province, {}).get(district, {}).get(subdistrict, "")
 
 def containers(page):
     # Define colors and styles
@@ -57,13 +75,21 @@ def containers(page):
         on_submit=lambda e: search_student(e),
     )
 
-    # Search input and results
+    # Search input and results for students
     search_input = ft.TextField(
         label="ค้นหา: ชื่อ นามสกุล หรือ ชื่อเล่น",
         bgcolor=white,
         on_change=lambda e: update_search_results(e.control.value)
     )
     search_results = ft.Column(expand=True, scroll="auto")
+
+    # Search input and results for parents
+    parent_search_input = ft.TextField(
+        label="ค้นหา: ชื่อหรือนามสกุลผู้ปกครอง",
+        bgcolor=white,
+        on_change=lambda e: update_parent_search_results(e.control.value)
+    )
+    parent_search_results = ft.Column(expand=True, scroll="auto")
 
     # Containers to hold dynamic content
     student_info_content = ft.Container()
@@ -87,6 +113,15 @@ def containers(page):
         on_click=lambda e: toggle_parent_edit(e)
     )
 
+    search_parent_btn = ft.ElevatedButton(
+        text="Search",
+        icon="SEARCH",
+        color=navy_blue,
+        bgcolor=yellow,
+        icon_color=navy_blue,
+        on_click=lambda e: toggle_parent_search_panel()
+    )
+
     # Editable student fields (global to access values)
     name_input = ft.TextField(bgcolor=white, height=40)
     surname_input = ft.TextField(bgcolor=white, height=40)
@@ -95,18 +130,50 @@ def containers(page):
     class_input = ft.TextField(bgcolor=white, height=40)
     s_tel_input = ft.TextField(bgcolor=white, height=40)
 
-    # Editable parent fields (global to access values)
+    # Editable parent fields (global to access values) - Used in edit mode
     parent_name_input = ft.TextField(bgcolor=white, height=40)
     parent_surname_input = ft.TextField(bgcolor=white, height=40)
     parent_tel_input = ft.TextField(bgcolor=white, height=40)
     parent_line_input = ft.TextField(bgcolor=white, height=40)
     parent_facebook_input = ft.TextField(bgcolor=white, height=40)
-    parent_address_input = ft.TextField(bgcolor=white, height=40)  # New field: House Number
-    parent_mu_input = ft.TextField(bgcolor=white, height=40)       # New field: Village
-    parent_tum_input = ft.TextField(bgcolor=white, height=40)      # New field: Sub-district
-    parent_amp_input = ft.TextField(bgcolor=white, height=40)      # New field: District
-    parent_prov_input = ft.TextField(bgcolor=white, height=40)     # New field: Province
-    parent_post_input = ft.TextField(bgcolor=white, height=40)     # New field: Postal Code
+    parent_address_input = ft.TextField(bgcolor=white, height=40)  # House Number
+    parent_mu_input = ft.TextField(bgcolor=white, height=40)       # Village
+    parent_tum_input = ft.TextField(bgcolor=white, height=40)      # Sub-district
+    parent_amp_input = ft.TextField(bgcolor=white, height=40)      # District
+    parent_prov_input = ft.TextField(bgcolor=white, height=40)     # Province
+    parent_post_input = ft.TextField(bgcolor=white, height=40)     # Postal Code
+
+    # AddressManager instance for dropdowns in add mode
+    address_manager = AddressManager()
+
+    # Dropdown fields for adding a new parent (used only in add mode)
+    add_prov_input = ft.Dropdown(bgcolor=white, options=[ft.dropdown.Option(p) for p in address_manager.get_provinces()])
+    add_amp_input = ft.Dropdown(bgcolor=white, options=[], visible=False)
+    add_tum_input = ft.Dropdown(bgcolor=white, options=[], visible=False)
+    add_post_input = ft.TextField(bgcolor=white, read_only=True, value="")
+
+    # Cascading address selection functions for add mode
+    def prov_select(e):
+        add_amp_input.options = [ft.dropdown.Option(d) for d in address_manager.get_districts(add_prov_input.value)]
+        add_amp_input.visible = True
+        add_tum_input.options = []
+        add_tum_input.visible = False
+        add_post_input.value = ""
+        page.update()
+
+    def Amp_select(e):
+        add_tum_input.options = [ft.dropdown.Option(s) for s in address_manager.get_subdistricts(add_prov_input.value, add_amp_input.value)]
+        add_tum_input.visible = True
+        add_post_input.value = ""
+        page.update()
+
+    def Tum_select(e):
+        add_post_input.value = address_manager.get_postal_code(add_prov_input.value, add_amp_input.value, add_tum_input.value)
+        page.update()
+
+    add_prov_input.on_change = prov_select
+    add_amp_input.on_change = Amp_select
+    add_tum_input.on_change = Tum_select
 
     # Function to create editable student fields
     def create_editable_student_fields(student):
@@ -177,7 +244,7 @@ def containers(page):
             ]
         )
 
-    # Function to create editable parent fields
+    # Function to create editable parent fields (for edit mode)
     def create_editable_parent_fields(student):
         if student:
             parent_name_input.value = student["M_Name"]
@@ -185,12 +252,12 @@ def containers(page):
             parent_tel_input.value = student["M_Tel"]
             parent_line_input.value = student["line"]
             parent_facebook_input.value = student["facebook"]
-            parent_address_input.value = student.get("H_Adr", "")  # New field
-            parent_mu_input.value = student.get("H_Mu", "")        # New field
-            parent_tum_input.value = student.get("H_Tum", "")      # New field
-            parent_amp_input.value = student.get("H_Amp", "")      # New field
-            parent_prov_input.value = student.get("H_Prov", "")    # New field
-            parent_post_input.value = student.get("H_Post", "")    # New field
+            parent_address_input.value = student.get("H_Adr", "")
+            parent_mu_input.value = student.get("H_Mu", "")
+            parent_tum_input.value = student.get("H_Tum", "")
+            parent_amp_input.value = student.get("H_Amp", "")
+            parent_prov_input.value = student.get("H_Prov", "")
+            parent_post_input.value = student.get("H_Post", "")
             
             return ft.Column(
                 controls=[
@@ -269,9 +336,89 @@ def containers(page):
             )
         return ft.Column([ft.Text("No parent data available")])
 
+    # Function to create parent fields for adding a new student/parent
+    def create_add_parent_fields():
+        return ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.Text(f"รหัสผู้ปกครอง: {int(max_id(parent_data, 'P_ID')['P_ID']) + 1 if parent_data else 1}"),
+                        search_parent_btn,
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                parent_search_input,
+                parent_search_results,
+                ft.Row(
+                    [
+                        ft.Column(
+                            [ft.Text("ชื่อผู้ปกครอง", size=13), parent_name_input],
+                            expand=1, spacing=0
+                        ),
+                        ft.Column(
+                            [ft.Text("นามสกุล", size=13), parent_surname_input],
+                            expand=1, spacing=0
+                        ),
+                    ],
+                    spacing=5,
+                ),
+                ft.Row(
+                    [
+                        ft.Column(
+                            [ft.Text("หมายเลขโทรศัพท์", size=13), parent_tel_input],
+                            expand=1, spacing=0
+                        ),
+                        ft.Column(
+                            [ft.Text("Line ID", size=13), parent_line_input],
+                            expand=1, spacing=0
+                        ),
+                        ft.Column(
+                            [ft.Text("Facebook", size=13), parent_facebook_input],
+                            expand=1, spacing=0
+                        ),
+                    ],
+                    spacing=5,
+                ),
+                ft.Row(
+                    [
+                        ft.Column(
+                            [ft.Text("บ้านเลขที่", size=13), parent_address_input],
+                            expand=1, spacing=0
+                        ),
+                        ft.Column(
+                            [ft.Text("หมู่", size=13), parent_mu_input],
+                            expand=1, spacing=0
+                        ),
+                        ft.Column(
+                            [ft.Text("ตำบล", size=13), add_tum_input],
+                            expand=1, spacing=0
+                        ),
+                    ],
+                    spacing=5,
+                ),
+                ft.Row(
+                    [
+                        ft.Column(
+                            [ft.Text("อำเภอ", size=13), add_amp_input],
+                            expand=1, spacing=0
+                        ),
+                        ft.Column(
+                            [ft.Text("จังหวัด", size=13), add_prov_input],
+                            expand=1, spacing=0
+                        ),
+                        ft.Column(
+                            [ft.Text("รหัสไปรษณีย์", size=13), add_post_input],
+                            expand=1, spacing=0
+                        ),
+                    ],
+                    spacing=5,
+                ),
+            ]
+        )
+
     # Function to display student info dynamically
-    def display_student_info(student):
-        if student:
+    def display_student_info(student, is_adding=False):
+        if student or is_adding:
             student_info_content.content = create_editable_student_fields(student) if editing_student[0] else ft.Column(
                 controls=[
                     ft.Row(
@@ -305,15 +452,15 @@ def containers(page):
                     ft.Row(
                         [
                             ft.Column(
-                                [ft.Text("ชื่อนักเรียน", size=13), ft.TextField(value=student["Name"], read_only=True, bgcolor=white, height=40)],
+                                [ft.Text("ชื่อนักเรียน", size=13), ft.TextField(value=student["Name"] if student else "", read_only=True, bgcolor=white, height=40)],
                                 expand=2, spacing=0
                             ),
                             ft.Column(
-                                [ft.Text("นามสกุล", size=13), ft.TextField(value=student["SurName"], read_only=True, bgcolor=white, height=40)],
+                                [ft.Text("นามสกุล", size=13), ft.TextField(value=student["SurName"] if student else "", read_only=True, bgcolor=white, height=40)],
                                 expand=2, spacing=0
                             ),
                             ft.Column(
-                                [ft.Text("ชื่อเล่น", size=13), ft.TextField(value=student["Nick"], read_only=True, bgcolor=white, height=40)],
+                                [ft.Text("ชื่อเล่น", size=13), ft.TextField(value=student["Nick"] if student else "", read_only=True, bgcolor=white, height=40)],
                                 expand=1, spacing=0
                             ),
                         ],
@@ -322,11 +469,11 @@ def containers(page):
                     ft.Row(
                         [
                             ft.Column(
-                                [ft.Text("โรงเรียนประจำ", size=13), ft.TextField(value=student["School"], read_only=True, bgcolor=white, height=40)],
+                                [ft.Text("โรงเรียนประจำ", size=13), ft.TextField(value=student["School"] if student else "", read_only=True, bgcolor=white, height=40)],
                                 expand=5, spacing=0
                             ),
                             ft.Column(
-                                [ft.Text("ระดับชั้น", size=13), ft.TextField(value=student["Class"], read_only=True, bgcolor=white, height=40)],
+                                [ft.Text("ระดับชั้น", size=13), ft.TextField(value=student["Class"] if student else "", read_only=True, bgcolor=white, height=40)],
                                 expand=2, spacing=0
                             ),
                         ],
@@ -335,7 +482,7 @@ def containers(page):
                     ft.Row(
                         [
                             ft.Column(
-                                [ft.Text("หมายเลขโทรศัพท์", size=13), ft.TextField(value=student["S_Tel"], read_only=True, bgcolor=white, height=40)],
+                                [ft.Text("หมายเลขโทรศัพท์", size=13), ft.TextField(value=student["S_Tel"] if student else "", read_only=True, bgcolor=white, height=40)],
                                 expand=True, spacing=0
                             ),
                         ],
@@ -350,80 +497,84 @@ def containers(page):
                     )
                 ]
             )
-            parent_info_content.content = create_editable_parent_fields(student) if editing_parent[0] else ft.Column(
-                controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Text(f"รหัสผู้ปกครอง: {student['P_ID']}"),
-                            edit_save_parent_btn,
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    ),
-                    ft.Row(
-                        [
-                            ft.Column(
-                                [ft.Text("ชื่อผู้ปกครอง", size=13), ft.TextField(value=student["M_Name"], read_only=True, bgcolor=white, height=40)],
-                                expand=1, spacing=0
-                            ),
-                            ft.Column(
-                                [ft.Text("นามสกุล", size=13), ft.TextField(value=student["M_SurName"], read_only=True, bgcolor=white, height=40)],
-                                expand=1, spacing=0
-                            ),
-                        ],
-                        spacing=5,
-                    ),
-                    ft.Row(
-                        [
-                            ft.Column(
-                                [ft.Text("หมายเลขโทรศัพท์", size=13), ft.TextField(value=student["M_Tel"], read_only=True, bgcolor=white, height=40)],
-                                expand=1, spacing=0
-                            ),
-                            ft.Column(
-                                [ft.Text("Line ID", size=13), ft.TextField(value=student["line"], read_only=True, bgcolor=white, height=40)],
-                                expand=1, spacing=0
-                            ),
-                            ft.Column(
-                                [ft.Text("Facebook", size=13), ft.TextField(value=student["facebook"], read_only=True, bgcolor=white, height=40)],
-                                expand=1, spacing=0
-                            ),
-                        ],
-                        spacing=5,
-                    ),
-                    ft.Row(
-                        [
-                            ft.Column(
-                                [ft.Text("บ้านเลขที่", size=13), ft.TextField(value=student.get("H_Adr", ""), read_only=True, bgcolor=white, height=40)],
-                                expand=1, spacing=0
-                            ),
-                            ft.Column(
-                                [ft.Text("หมู่", size=13), ft.TextField(value=student.get("H_Mu", ""), read_only=True, bgcolor=white, height=40)],
-                                expand=1, spacing=0
-                            ),
-                            ft.Column(
-                                [ft.Text("ตำบล", size=13), ft.TextField(value=student.get("H_Tum", ""), read_only=True, bgcolor=white, height=40)],
-                                expand=1, spacing=0
-                            ),
-                        ],
-                        spacing=5,
-                    ),
-                    ft.Row(
-                        [
-                            ft.Column(
-                                [ft.Text("อำเภอ", size=13), ft.TextField(value=student.get("H_Amp", ""), read_only=True, bgcolor=white, height=40)],
-                                expand=1, spacing=0
-                            ),
-                            ft.Column(
-                                [ft.Text("จังหวัด", size=13), ft.TextField(value=student.get("H_Prov", ""), read_only=True, bgcolor=white, height=40)],
-                                expand=1, spacing=0
-                            ),
-                            ft.Column(
-                                [ft.Text("รหัสไปรษณีย์", size=13), ft.TextField(value=student.get("H_Post", ""), read_only=True, bgcolor=white, height=40)],
-                                expand=1, spacing=0
-                            ),
-                        ],
-                        spacing=5,
-                    ),
-                ]
+            parent_info_content.content = (
+                create_add_parent_fields() if is_adding else
+                create_editable_parent_fields(student) if editing_parent[0] else
+                ft.Column(
+                    controls=[
+                        ft.Row(
+                            controls=[
+                                ft.Text(f"รหัสผู้ปกครอง: {student['P_ID']}" if student else ""),
+                                edit_save_parent_btn,
+                            ],
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        ),
+                        ft.Row(
+                            [
+                                ft.Column(
+                                    [ft.Text("ชื่อผู้ปกครอง", size=13), ft.TextField(value=student["M_Name"] if student else "", read_only=True, bgcolor=white, height=40)],
+                                    expand=1, spacing=0
+                                ),
+                                ft.Column(
+                                    [ft.Text("นามสกุล", size=13), ft.TextField(value=student["M_SurName"] if student else "", read_only=True, bgcolor=white, height=40)],
+                                    expand=1, spacing=0
+                                ),
+                            ],
+                            spacing=5,
+                        ),
+                        ft.Row(
+                            [
+                                ft.Column(
+                                    [ft.Text("หมายเลขโทรศัพท์", size=13), ft.TextField(value=student["M_Tel"] if student else "", read_only=True, bgcolor=white, height=40)],
+                                    expand=1, spacing=0
+                                ),
+                                ft.Column(
+                                    [ft.Text("Line ID", size=13), ft.TextField(value=student["line"] if student else "", read_only=True, bgcolor=white, height=40)],
+                                    expand=1, spacing=0
+                                ),
+                                ft.Column(
+                                    [ft.Text("Facebook", size=13), ft.TextField(value=student["facebook"] if student else "", read_only=True, bgcolor=white, height=40)],
+                                    expand=1, spacing=0
+                                ),
+                            ],
+                            spacing=5,
+                        ),
+                        ft.Row(
+                            [
+                                ft.Column(
+                                    [ft.Text("บ้านเลขที่", size=13), ft.TextField(value=student.get("H_Adr", "") if student else "", read_only=True, bgcolor=white, height=40)],
+                                    expand=1, spacing=0
+                                ),
+                                ft.Column(
+                                    [ft.Text("หมู่", size=13), ft.TextField(value=student.get("H_Mu", "") if student else "", read_only=True, bgcolor=white, height=40)],
+                                    expand=1, spacing=0
+                                ),
+                                ft.Column(
+                                    [ft.Text("ตำบล", size=13), ft.TextField(value=student.get("H_Tum", "") if student else "", read_only=True, bgcolor=white, height=40)],
+                                    expand=1, spacing=0
+                                ),
+                            ],
+                            spacing=5,
+                        ),
+                        ft.Row(
+                            [
+                                ft.Column(
+                                    [ft.Text("อำเภอ", size=13), ft.TextField(value=student.get("H_Amp", "") if student else "", read_only=True, bgcolor=white, height=40)],
+                                    expand=1, spacing=0
+                                ),
+                                ft.Column(
+                                    [ft.Text("จังหวัด", size=13), ft.TextField(value=student.get("H_Prov", "") if student else "", read_only=True, bgcolor=white, height=40)],
+                                    expand=1, spacing=0
+                                ),
+                                ft.Column(
+                                    [ft.Text("รหัสไปรษณีย์", size=13), ft.TextField(value=student.get("H_Post", "") if student else "", read_only=True, bgcolor=white, height=40)],
+                                    expand=1, spacing=0
+                                ),
+                            ],
+                            spacing=5,
+                        ),
+                    ]
+                )
             )
         else:
             if editing_student[0]:
@@ -466,44 +617,42 @@ def containers(page):
                 """
                 Exec_Sql(sql)
             else:  # Adding a new student
-                # Get the next available IDs
                 all_students = Exec_Sql("SELECT * FROM Student ORDER BY S_ID DESC")
-                all_parents = Exec_Sql("SELECT * FROM Parent ORDER BY P_ID DESC")
-                
                 next_s_id = int(max_id(all_students, "S_ID")["S_ID"]) + 1 if all_students else 1
-                next_p_id = int(max_id(all_parents, "P_ID")["P_ID"]) + 1 if all_parents else 1
                 
-                # First, insert the parent data WITH explicit P_ID
-                parent_sql = f"""
-                    INSERT INTO Parent (P_ID, M_Name, M_SurName, M_Tel, line, facebook, H_Adr, H_Mu, H_Tum, H_Amp, H_Prov, H_Post)
-                    VALUES ({next_p_id}, '{parent_name_input.value}', '{parent_surname_input.value}', 
-                            '{parent_tel_input.value}', '{parent_line_input.value}', 
-                            '{parent_facebook_input.value}', '{parent_address_input.value}', 
-                            '{parent_mu_input.value}', '{parent_tum_input.value}', 
-                            '{parent_amp_input.value}', '{parent_prov_input.value}', 
-                            '{parent_post_input.value}')
-                """
-                Exec_Sql(parent_sql)
+                if current_student["P_ID"] is None:  # No parent selected, create new
+                    all_parents = Exec_Sql("SELECT * FROM Parent ORDER BY P_ID DESC")
+                    next_p_id = int(max_id(all_parents, "P_ID")["P_ID"]) + 1 if all_parents else 1
+                    parent_sql = f"""
+                        INSERT INTO Parent (P_ID, M_Name, M_SurName, M_Tel, line, facebook, H_Adr, H_Mu, H_Tum, H_Amp, H_Prov, H_Post)
+                        VALUES ({next_p_id}, '{parent_name_input.value}', '{parent_surname_input.value}', 
+                                '{parent_tel_input.value}', '{parent_line_input.value}', 
+                                '{parent_facebook_input.value}', '{parent_address_input.value}', 
+                                '{parent_mu_input.value}', '{add_tum_input.value or ''}', 
+                                '{add_amp_input.value or ''}', '{add_prov_input.value or ''}', 
+                                '{add_post_input.value}')
+                    """
+                    Exec_Sql(parent_sql)
+                    p_id_to_use = next_p_id
+                else:  # Use existing parent
+                    p_id_to_use = current_student["P_ID"]
                 
-                # Insert the student data with the new parent ID
                 student_sql = f"""
                     INSERT INTO Student (S_ID, Name, SurName, Nick, School, Class, S_Tel, P_ID)
                     VALUES ({next_s_id}, '{name_input.value}', '{surname_input.value}', '{nick_input.value}', 
                             '{school_input.value}', '{class_input.value}', '{s_tel_input.value}', 
-                            {next_p_id})
+                            {p_id_to_use})
                 """
                 Exec_Sql(student_sql)
                 
-                # Update the student ID input field
                 student_id_input.value = str(next_s_id)
 
-            # Refresh student data
             student_data = Exec_Sql("SELECT * FROM Student as S, Parent as P WHERE S.P_ID = P.P_ID ORDER BY S.S_ID DESC")
             current_student = next((s for s in student_data if s["S_ID"] == int(student_id_input.value)), None) if student_id_input.value else student_data[0] if student_data else None
             
             edit_save_student_btn.text = "Edit"
             edit_save_student_btn.icon = "EDIT"
-            editing_parent[0] = False  # Reset parent edit mode after saving
+            editing_parent[0] = False
             edit_save_parent_btn.text = "Edit"
             edit_save_parent_btn.icon = "EDIT"
             display_student_info(current_student)
@@ -568,7 +717,7 @@ def containers(page):
             parent_info_content.content = ft.Text("")
             page.update()
 
-    # Toggle search panel visibility
+    # Toggle student search panel visibility
     def toggle_search_panel():
         search_input.visible = not search_input.visible
         search_results.visible = not search_results.visible
@@ -578,7 +727,7 @@ def containers(page):
             search_results.controls.clear()
         page.update()
 
-    # Update search results inline
+    # Update student search results inline
     def update_search_results(search_text):
         search_results.controls.clear()
         for item in student_data:
@@ -608,22 +757,74 @@ def containers(page):
         search_results.controls.clear()
         page.update()
 
-    # Add new student function
+    # Toggle parent search panel visibility
+    def toggle_parent_search_panel():
+        parent_search_input.visible = not parent_search_input.visible
+        parent_search_results.visible = not parent_search_results.visible
+        if parent_search_input.visible:
+            update_parent_search_results('')
+        else:
+            parent_search_results.controls.clear()
+        page.update()
+
+    # Update parent search results inline
+    def update_parent_search_results(search_text):
+        parent_search_results.controls.clear()
+        for item in parent_data:
+            if (search_text in item['M_Name']) or (search_text in item['M_SurName']):
+                parent_search_results.controls.append(
+                    ft.Row(
+                        [
+                            ft.TextButton(
+                                text=f"{item['M_Name']} {item['M_SurName']} - ID: {item['P_ID']}",
+                                on_click=lambda e, p_id=item['P_ID']: select_parent(p_id)
+                            )
+                        ]
+                    )
+                )
+        page.update()
+
+    # Select a parent from search results
+    def select_parent(p_id):
+        selected_parent = next((p for p in parent_data if p["P_ID"] == p_id), None)
+        if selected_parent:
+            parent_name_input.value = selected_parent["M_Name"]
+            parent_surname_input.value = selected_parent["M_SurName"]
+            parent_tel_input.value = selected_parent["M_Tel"]
+            parent_line_input.value = selected_parent["line"]
+            parent_facebook_input.value = selected_parent["facebook"]
+            parent_address_input.value = selected_parent.get("H_Adr", "")
+            parent_mu_input.value = selected_parent.get("H_Mu", "")
+            add_tum_input.value = selected_parent.get("H_Tum", "")
+            add_amp_input.value = selected_parent.get("H_Amp", "")
+            add_prov_input.value = selected_parent.get("H_Prov", "")
+            add_post_input.value = selected_parent.get("H_Post", "")
+            # Update dropdown visibility
+            add_amp_input.visible = True
+            add_tum_input.visible = True
+            add_amp_input.options = [ft.dropdown.Option(d) for d in address_manager.get_districts(add_prov_input.value)]
+            add_tum_input.options = [ft.dropdown.Option(s) for s in address_manager.get_subdistricts(add_prov_input.value, add_amp_input.value)]
+            # Set current_student P_ID for saving
+            global current_student
+            current_student["P_ID"] = p_id
+        parent_search_input.visible = False
+        parent_search_results.visible = False
+        parent_search_results.controls.clear()
+        page.update()
+
+    # Add new student function with cascading address workflow
     def add_student(e):
         global current_student
         
-        # Fetch latest data to ensure we have current max IDs
         all_students = Exec_Sql("SELECT * FROM Student ORDER BY S_ID DESC")
         all_parents = Exec_Sql("SELECT * FROM Parent ORDER BY P_ID DESC")
         
-        # Find max IDs and increment by 1
         next_s_id = int(max_id(all_students, "S_ID")["S_ID"]) + 1 if all_students else 1
         next_p_id = int(max_id(all_parents, "P_ID")["P_ID"]) + 1 if all_parents else 1
         
-        # Create empty student record with new IDs
         current_student = {
-            "S_ID": None,  # Set to None to trigger the "Adding a new student" branch in toggle_student_edit
-            "P_ID": next_p_id,
+            "S_ID": None,
+            "P_ID": None,  # Reset to None
             "Name": "",
             "SurName": "",
             "Nick": "",
@@ -635,15 +836,14 @@ def containers(page):
             "M_Tel": "",
             "line": "",
             "facebook": "",
-            "H_Adr": "",  # New field
-            "H_Mu": "",   # New field
-            "H_Tum": "",  # New field
-            "H_Amp": "",  # New field
-            "H_Prov": "", # New field
-            "H_Post": ""  # New field
+            "H_Adr": "",
+            "H_Mu": "",
+            "H_Tum": "",
+            "H_Amp": "",
+            "H_Prov": "",
+            "H_Post": ""
         }
         
-        # Set student ID field
         student_id_input.value = str(next_s_id)
         
         # Clear all input fields
@@ -658,27 +858,25 @@ def containers(page):
         parent_tel_input.value = ""
         parent_line_input.value = ""
         parent_facebook_input.value = ""
-        parent_address_input.value = ""  # New field
-        parent_mu_input.value = ""       # New field
-        parent_tum_input.value = ""      # New field
-        parent_amp_input.value = ""      # New field
-        parent_prov_input.value = ""     # New field
-        parent_post_input.value = ""     # New field
+        parent_address_input.value = ""
+        parent_mu_input.value = ""
+        add_tum_input.value = None
+        add_amp_input.value = None
+        add_prov_input.value = None
+        add_post_input.value = ""
+        add_amp_input.visible = False
+        add_tum_input.visible = False
         
-        # Enable edit mode for both student and parent
         editing_student[0] = True
         editing_parent[0] = True
         
-        # Update button text and icons
         edit_save_student_btn.text = "Save"
         edit_save_student_btn.icon = "SAVE"
         edit_save_parent_btn.text = "Save" 
         edit_save_parent_btn.icon = "SAVE"
         
-        # Display form in edit mode
-        display_student_info(current_student)
+        display_student_info(current_student, is_adding=True)
         
-        # Hide search panel if visible
         if search_input.visible:
             search_input.visible = False
             search_results.visible = False
@@ -688,9 +886,11 @@ def containers(page):
     # Initial display
     display_student_info(current_student)
 
-    # Hide search panel initially
+    # Hide search panels initially
     search_input.visible = False
     search_results.visible = False
+    parent_search_input.visible = False
+    parent_search_results.visible = False
 
     # Student Info Container
     student_info_container = ft.Container(

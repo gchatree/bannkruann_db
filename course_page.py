@@ -1,8 +1,7 @@
 import flet as ft
 import sqlite3
-import json
 
-# Function to execute SQL queries
+# Database execution function
 def Exec_Sql(sql):
     conn = sqlite3.connect("Bannkruann.db")
     c = conn.cursor()
@@ -17,313 +16,369 @@ def Exec_Sql(sql):
     conn.close()
     return jsonlist
 
+def max_id(data, id_name):
+    maxitem = None
+    maxvalue = -1
+    for s in data:
+        if int(s[id_name]) > maxvalue:
+            maxvalue = int(s[id_name])
+            maxitem = s
+    return maxitem
+
 def containers(page):
-    # Define styles
-    text_size = 13
-    Icon_Size = 15
-    field_height = 50
-    class_options = ["อ.3", "ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6", "ม.1", "ม.2", "ม.3"]
-    day_options = ["เสาร์", "อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์"]
-    subject_options = ["คณิต", "วิทย์", "อังกฤษ", "ไทย"]
+    # Define color scheme
+    navy_blue = "#003087"
+    yellow = "#FFC107"
+    grey = "#E0E0E0"
+    white = "#FFFFFF"
+    darkgrey = "#616161"
 
-    # Fetch initial data
-    def load_data():
-        sql = "SELECT * FROM Course ORDER BY ID DESC"
-        return Exec_Sql(sql)
+    # Constants for text size and field height
+    txt_size = 13
+    field_height = 40
 
-    # Initialize state
-    original_data = load_data()
-    data = original_data.copy()
-    editing_index = None
-    new_record_fields = None
-    
-    # Get unique class values from data
-    def get_unique_classes():
-        classes = set()
-        for row in original_data:
-            if row["Class"] and row["Class"].strip():
-                classes.add(row["Class"])
-        return sorted(list(classes))
-    
-    # Create filter dropdown
-    class_filter = ft.Dropdown(
-        width=500,
-        text_size=text_size,
-        hint_text="Filter by Class",
-        autofocus=False
+    # Fetch student data from the database
+    student_sql = "SELECT S_ID, Name, SurName, Nick FROM Student ORDER BY S_ID DESC"
+    student_data = Exec_Sql(student_sql)
+
+    # Select the student with the maximum S_ID (last student)
+    last_student = max_id(student_data, "S_ID") if student_data else None
+
+    # Variables to hold student info
+    student_id_text = ft.Text(
+        str(last_student["S_ID"]) if last_student else "1234",
+        color=navy_blue,
+        size=txt_size
     )
-    
-    # Fill filter dropdown with options
-    def update_filter_options():
-        unique_classes = get_unique_classes()
-        # Add "All Classes" option at the beginning
-        options = [ft.dropdown.Option(key="all", text="All Classes")]
-        # Add all unique class options
-        options.extend([ft.dropdown.Option(key=cls, text=cls) for cls in unique_classes])
-        class_filter.options = options
-        class_filter.value = "all"  # Default to showing all classes
-        page.update()
-    
-    # Filter data based on selected class
-    def filter_data(e):
-        nonlocal data
-        if class_filter.value == "all":
-            data = original_data.copy()
+    name_text = ft.Text(
+        last_student["Name"] if last_student else "เด็กชาย",
+        color=navy_blue,
+        size=txt_size
+    )
+    surname_text = ft.Text(
+        last_student["SurName"] if last_student else "นามสกุล",
+        color=navy_blue,
+        size=txt_size
+    )
+    nickname_text = ft.Text(
+        last_student["Nick"] if last_student else "ชื่อเล่น",
+        color=navy_blue,
+        size=txt_size
+    )
+
+    # Search input field for filtering students
+    search_input = ft.TextField(
+        label="ค้นหา: ชื่อ นามสกุล หรือ ชื่อเล่น",
+        bgcolor=white,
+        visible=False,
+        on_change=lambda e: update_search_results(e.control.value)
+    )
+
+    # Search results container
+    search_results = ft.Column(visible=False, scroll="auto", height=150)
+
+    # Fetch course data from the database
+    course_sql = "SELECT C_ID, Class, Day, Period, Subject, Cost FROM Course ORDER BY C_ID"
+    course_data = Exec_Sql(course_sql)
+    filtered_course_data = course_data.copy()
+
+    # Track selected courses
+    selected_course_ids = set()
+
+    # Populate dropdown options from course data
+    class_options = sorted(list(set(course["Class"] for course in course_data if course["Class"])))
+    day_options = sorted(list(set(course["Day"] for course in course_data if course["Day"])))
+
+    # Dropdowns for filtering courses
+    class_dropdown = ft.Dropdown(
+        options=[ft.dropdown.Option("ทั้งหมด")] + [ft.dropdown.Option(opt) for opt in class_options],
+        bgcolor=white,
+        expand=True,
+        width=250,
+        label="ห้องเรียน",
+        value="ทั้งหมด",
+        on_change=lambda e: filter_courses()
+    )
+    day_dropdown = ft.Dropdown(
+        options=[ft.dropdown.Option("ทั้งหมด")] + [ft.dropdown.Option(opt) for opt in day_options],
+        bgcolor=white,
+        expand=True,
+        width=250,
+        label="วันเรียน",
+        value="ทั้งหมด",
+        on_change=lambda e: filter_courses()
+    )
+
+    # Course table
+    course_table = ft.ListView(
+        controls=[ft.DataTable(
+            column_spacing=5,
+            columns=[
+                ft.DataColumn(ft.Text("")),  # Checkbox column
+                ft.DataColumn(ft.Text("รหัสคอร์ส", size=txt_size)),
+                ft.DataColumn(ft.Text("ห้องเรียน", size=txt_size)),
+                ft.DataColumn(ft.Text("วัน", size=txt_size)),
+                ft.DataColumn(ft.Text("ช่วงเวลา", size=txt_size)),
+                ft.DataColumn(ft.Text("วิชา", size=txt_size)),
+                ft.DataColumn(ft.Text("ราคา", size=txt_size)),
+            ],
+            rows=[]
+        )],
+        expand=True,
+        height=240,
+        auto_scroll=True
+    )
+
+    # Functions for search functionality
+    def toggle_search_panel():
+        search_input.visible = not search_input.visible
+        search_results.visible = not search_results.visible
+        if search_input.visible:
+            search_input.value = ""
+            update_search_results("")
         else:
-            data = [item for item in original_data if item["Class"] == class_filter.value]
-        refresh_table()
-
-    # Refresh table function
-    def refresh_table():
-        nonlocal data, editing_index, new_record_fields
-        datatbl.controls[1] = build_table()
+            search_results.controls.clear()
         page.update()
 
-    # Delete record
-    def delete_record(index):
-        nonlocal data, original_data
-        record_id = data[index]['ID']
-        
-        # Delete from the database
-        sql = f"DELETE FROM Course WHERE ID = '{record_id}'"
-        Exec_Sql(sql)
-        
-        # Delete from both data sets
-        data = [item for item in data if item['ID'] != record_id]
-        original_data = [item for item in original_data if item['ID'] != record_id]
-        
-        # Update filter options in case we deleted the last instance of a class
-        update_filter_options()
-        refresh_table()
-
-    # Edit record (start editing)
-    def edit_record(index):
-        nonlocal editing_index
-        editing_index = index
-        refresh_table()
-
-    # Save edited record
-    def save_edit_record(e, index):
-        nonlocal editing_index, data, original_data
-        
-        # Get the current row from the table
-        row = datatbl.controls[1].controls[0].rows[index]
-        record_id = data[index]["ID"]
-        
-        # Update data with edited values
-        updated_values = {
-            "C_ID": row.cells[0].content.value,
-            "Class": row.cells[1].content.value,
-            "Day": row.cells[2].content.value,
-            "Period": row.cells[3].content.value,
-            "Subject": row.cells[4].content.value,
-            "Cost": row.cells[5].content.value,
-            "ID": record_id  # Preserve original ID
-        }
-        
-        # Update current filtered data
-        data[index] = updated_values
-        
-        # Update original data
-        for i, item in enumerate(original_data):
-            if item["ID"] == record_id:
-                original_data[i] = updated_values
-                break
-
-        # Update database
-        sql = f"""
-        UPDATE Course 
-        SET C_ID = '{updated_values["C_ID"]}', 
-            Class = '{updated_values["Class"]}', 
-            Day = '{updated_values["Day"]}', 
-            Period = '{updated_values["Period"]}', 
-            Subject = '{updated_values["Subject"]}', 
-            Cost = '{updated_values["Cost"]}'
-        WHERE ID = '{record_id}'
-        """
-        Exec_Sql(sql)
-        editing_index = None  # Reset editing state
-        
-        # Update filter options in case we changed a class value
-        update_filter_options()
-        refresh_table()
-        print("Save completed")  # Debug
-
-    # Copy record
-    def copy_record(index):
-        nonlocal data, original_data
-        
-        # Find the highest ID in original_data
-        highest_id = max([int(item["ID"]) for item in original_data])
-        new_id = str(highest_id + 1)
-        
-        new_record = {
-            "C_ID": data[index]["C_ID"],
-            "Class": data[index]["Class"],
-            "Day": data[index]["Day"],
-            "Period": data[index]["Period"],
-            "Subject": data[index]["Subject"],
-            "Cost": data[index]["Cost"],
-            "ID": new_id
-        }
-        
-        sql = f"""
-        INSERT INTO Course (C_ID, Class, Day, Period, Subject, Cost, ID)
-        VALUES ('{new_record["C_ID"]}', '{new_record["Class"]}', '{new_record["Day"]}', 
-                '{new_record["Period"]}', '{new_record["Subject"]}', '{new_record["Cost"]}', 
-                '{new_record["ID"]}')
-        """
-        Exec_Sql(sql)
-        
-        # Add to both datasets
-        data.insert(0, new_record)
-        original_data.insert(0, new_record)
-        
-        refresh_table()
-
-    # Add new record
-    def add_record(e):
-        nonlocal new_record_fields
-        new_record_fields = [
-            ft.DataCell(ft.TextField(text_size=text_size, height=field_height)),
-            ft.DataCell(ft.Dropdown(
-                options=[ft.dropdown.Option(key=option, text=option) for option in class_options],
-                text_size=text_size
-            )),
-            ft.DataCell(ft.Dropdown(
-                options=[ft.dropdown.Option(key=option, text=option) for option in day_options],
-                text_size=text_size
-            )),
-            ft.DataCell(ft.TextField(text_size=text_size, height=field_height)),
-            ft.DataCell(ft.Dropdown(
-                options=[ft.dropdown.Option(key=option, text=option) for option in subject_options],
-                text_size=text_size
-            )),
-            ft.DataCell(ft.TextField(text_size=text_size, height=field_height)),
-            ft.DataCell(ft.IconButton(ft.Icons.SAVE, on_click=lambda e: save_new_record(e)))
-        ]
-        refresh_table()
-
-    # Save new record
-    def save_new_record(e):
-        nonlocal new_record_fields, data, original_data
-        
-        # Find the highest ID in original_data
-        highest_id = max([int(item["ID"]) for item in original_data]) if original_data else 0
-        new_id = str(highest_id + 1)
-        
-        new_record = {
-            "C_ID": new_record_fields[0].content.value,
-            "Class": new_record_fields[1].content.value,
-            "Day": new_record_fields[2].content.value,
-            "Period": new_record_fields[3].content.value,
-            "Subject": new_record_fields[4].content.value,
-            "Cost": new_record_fields[5].content.value,
-            "ID": new_id
-        }
-        
-        sql = f"""
-        INSERT INTO Course (C_ID, Class, Day, Period, Subject, Cost, ID)
-        VALUES ('{new_record["C_ID"]}', '{new_record["Class"]}', '{new_record["Day"]}', 
-                '{new_record["Period"]}', '{new_record["Subject"]}', '{new_record["Cost"]}', 
-                '{new_record["ID"]}')
-        """
-        Exec_Sql(sql)
-        
-        # Add to both datasets
-        data.insert(0, new_record)
-        original_data.insert(0, new_record)
-        
-        new_record_fields = None
-        
-        # Update filter options in case we added a new class
-        update_filter_options()
-        refresh_table()
-
-    # Build table with ListView
-    def build_table():
-        return ft.ListView(
-            controls=[ft.DataTable(
-                column_spacing=5,
-                columns=[
-                    ft.DataColumn(label=ft.Text("C_ID", size=text_size)),
-                    ft.DataColumn(label=ft.Text("Class", size=text_size, width=150)),
-                    ft.DataColumn(label=ft.Text("Day", size=text_size, width=80)),
-                    ft.DataColumn(label=ft.Text("Period", size=text_size, width=100)),
-                    ft.DataColumn(label=ft.Text("Subject", size=text_size)),
-                    ft.DataColumn(label=ft.Text("Cost", size=text_size, width=90)),
-                    ft.DataColumn(label=ft.Text("Actions", size=text_size, text_align=ft.TextAlign.END)),
-                ],
-                rows=([ft.DataRow(cells=new_record_fields)] if new_record_fields else []) + [
-                    ft.DataRow(
-                        cells=[
-                            ft.DataCell(ft.TextField(value=item["C_ID"], text_size=text_size, height=field_height) if index == editing_index else ft.Text(item["C_ID"], size=text_size)),
-                            ft.DataCell(ft.TextField(value=item["Class"], text_size=text_size, height=field_height) if index == editing_index else ft.Text(item["Class"], size=text_size)),
-                            ft.DataCell(ft.TextField(value=item["Day"], text_size=text_size, height=field_height) if index == editing_index else ft.Text(item["Day"], size=text_size)),
-                            ft.DataCell(ft.TextField(value=item["Period"], text_size=text_size, height=field_height, width=100) if index == editing_index else ft.Text(item["Period"], size=text_size)),
-                            ft.DataCell(ft.TextField(value=item["Subject"], text_size=text_size, height=field_height, width=100) if index == editing_index else ft.Text(item["Subject"], size=text_size)),
-                            ft.DataCell(ft.TextField(value=item["Cost"], text_size=text_size, height=field_height, width=90) if index == editing_index else ft.Text(str(item["Cost"]), size=text_size)),
-                            ft.DataCell(
-                                ft.Row(
-                                    [
-                                        # Use separate buttons for edit and save functionality
-                                        ft.IconButton(
-                                            icon=ft.Icons.SAVE,
-                                            on_click=lambda e, idx=index: save_edit_record(e, idx),
-                                            visible=index == editing_index,
-                                            icon_size = Icon_Size
-                                        ),
-                                        ft.IconButton(
-                                            icon=ft.Icons.EDIT,
-                                            on_click=lambda e, idx=index: edit_record(idx),
-                                            visible=index != editing_index,
-                                            icon_size = Icon_Size
-                                        ),
-                                        ft.IconButton(ft.Icons.COPY_OUTLINED, on_click=lambda e, 
-                                            idx=index: copy_record(idx),
-                                            icon_size = Icon_Size),
-                                        ft.IconButton(ft.Icons.DELETE, on_click=lambda e, 
-                                            idx=index: delete_record(idx),
-                                            icon_size = Icon_Size),
-                                    ],
-                                    alignment=ft.MainAxisAlignment.START,
-                                    spacing=0,
-                                )
-                            ),
-                        ]
+    def update_search_results(search_text):
+        search_results.controls.clear()
+        if not student_data:
+            search_results.controls.append(ft.Text("ไม่มีข้อมูลนักเรียนในฐานข้อมูล"))
+        else:
+            filtered_students = [
+                s for s in student_data
+                if (search_text.lower() in str(s["Name"]).lower() or
+                    search_text.lower() in str(s["SurName"]).lower() or
+                    search_text.lower() in str(s["Nick"]).lower())
+            ]
+            if not filtered_students:
+                search_results.controls.append(ft.Text("ไม่พบนักเรียนที่ตรงกับการค้นหา"))
+            else:
+                for student in filtered_students:
+                    search_results.controls.append(
+                        ft.TextButton(
+                            text=f"{student['Name']} {student['SurName']} ({student['Nick']}) - ID: {student['S_ID']}",
+                            on_click=lambda e, s_id=student["S_ID"]: select_student(s_id)
+                        )
                     )
-                    for index, item in enumerate(data)
-                ]
-            )],
-            expand=True,
-            auto_scroll=False
-        )
+        page.update()
 
-    # Create the table UI
-    datatbl = ft.Column(
+    def select_student(s_id):
+        selected_student = next((s for s in student_data if s["S_ID"] == s_id), None)
+        if selected_student:
+            student_id_text.value = str(selected_student["S_ID"])
+            name_text.value = selected_student["Name"]
+            surname_text.value = selected_student["SurName"]
+            nickname_text.value = selected_student["Nick"]
+        search_input.visible = False
+        search_results.visible = False
+        search_results.controls.clear()
+        page.update()
+
+    # Function to update selected course IDs
+    def update_selection(e, cid):
+        if e.control.value:
+            selected_course_ids.add(cid)
+        elif cid in selected_course_ids:  # Only remove if it exists
+            selected_course_ids.remove(cid)
+        page.update()  # Optional: refresh UI if needed
+
+    # Function to filter courses and update the table
+    def filter_courses():
+        nonlocal filtered_course_data
+        selected_class = class_dropdown.value
+        selected_day = day_dropdown.value
+
+        # Filter the course data
+        filtered_course_data = course_data.copy()
+        if selected_class != "ทั้งหมด":
+            filtered_course_data = [course for course in filtered_course_data if course["Class"] == selected_class]
+        if selected_day != "ทั้งหมด":
+            filtered_course_data = [course for course in filtered_course_data if course["Day"] == selected_day]
+
+        # Update the table rows with preserved checkbox states
+        course_table.controls[0].rows = [
+            ft.DataRow(cells=[
+                ft.DataCell(ft.Checkbox(
+                    value=course["C_ID"] in selected_course_ids,
+                    on_change=lambda e, cid=course["C_ID"]: update_selection(e, cid)
+                )),
+                ft.DataCell(ft.Text(course["C_ID"], size=txt_size)),
+                ft.DataCell(ft.Text(course["Class"], size=txt_size)),
+                ft.DataCell(ft.Text(course["Day"], size=txt_size)),
+                ft.DataCell(ft.Text(course["Period"], size=txt_size)),
+                ft.DataCell(ft.Text(course["Subject"], size=txt_size)),
+                ft.DataCell(ft.Text(str(course["Cost"]), size=txt_size)),
+            ]) for course in filtered_course_data
+        ]
+        page.update()
+
+    # Initial population of the course table
+    filter_courses()
+
+    return ft.Column(
         controls=[
-            ft.Row(
-                [
-                    # Class filter on the left
-                    ft.Text("Filter:", size=text_size),
-                    class_filter,
-                    # Spacer to push add button to the right
-                    ft.Container(expand=True),
-                    # Add button on the right
-                    ft.ElevatedButton("Add", icon=ft.Icons.ADD_CIRCLE, on_click=add_record),
-                ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            # Course Selection Container
+            ft.Container(
+                border_radius=15,
+                margin=ft.margin.only(10, 0, 10, 0),
+                content=ft.Column(
+                    spacing=0,
+                    controls=[
+                        ft.Container(
+                            height=40,
+                            padding=ft.padding.only(10, 10, 10, 10),
+                            bgcolor=navy_blue,
+                            content=ft.Column(
+                                spacing=0,
+                                controls=[
+                                    ft.Row(
+                                        [ft.Text(":::  เลือกคอร์ส  :::", color=yellow, size=18)],
+                                        alignment=ft.MainAxisAlignment.CENTER
+                                    )
+                                ]
+                            )
+                        ),
+                        ft.Container(
+                            bgcolor=grey,
+                            padding=ft.padding.only(10, 10, 10, 10),
+                            content=ft.Column(
+                                controls=[
+                                    ft.Row(
+                                        [
+                                            ft.Text("รหัสนักเรียน :", color=navy_blue, size=txt_size),
+                                            student_id_text,
+                                            ft.Text("ชื่อ :", color=navy_blue, size=txt_size),
+                                            name_text,
+                                            ft.Text("", color=navy_blue, size=txt_size),
+                                            surname_text,
+                                            ft.Text("(", color=navy_blue, size=txt_size),
+                                            nickname_text,
+                                            ft.Text(")", color=navy_blue, size=txt_size),
+                                            ft.IconButton(
+                                                icon="SEARCH",
+                                                on_click=lambda e: toggle_search_panel()
+                                            )
+                                        ],
+                                        alignment=ft.MainAxisAlignment.START,
+                                    ),
+                                    search_input,
+                                    search_results,
+                                    ft.Row(
+                                        [
+                                            class_dropdown,
+                                            day_dropdown
+                                        ]
+                                    ),
+                                    course_table,
+                                    ft.Row(
+                                        [
+                                            ft.TextField(
+                                                label="ข้อมูลสรุปการเลือก",
+                                                text_size=txt_size,
+                                                height=field_height,
+                                                expand=True
+                                            ),
+                                            ft.TextField(
+                                                text_size=txt_size,
+                                                height=field_height,
+                                                visible=False,
+                                                expand=True
+                                            )
+                                        ]
+                                    )
+                                ]
+                            )
+                        )
+                    ]
+                )
             ),
-            build_table(),
+            # Payment Information Container (unchanged)
+            ft.Container(
+                border_radius=15,
+                margin=ft.margin.only(10, 0, 10, 0),
+                bgcolor=grey,
+                content=ft.Column(
+                    controls=[
+                        ft.Container(
+                            bgcolor=yellow,
+                            height=40,
+                            padding=ft.padding.only(10, 0, 10, 10),
+                            content=ft.Column(
+                                alignment=ft.MainAxisAlignment.CENTER,
+                                controls=[
+                                    ft.Row(
+                                        [
+                                            ft.Text(
+                                                ":::: ข้อมูลการชำระเงิน ::::",
+                                                expand=True,
+                                                size=18,
+                                                text_align="center"
+                                            )
+                                        ]
+                                    )
+                                ]
+                            )
+                        ),
+                        ft.Container(
+                            padding=ft.padding.only(10, 0, 10, 10),
+                            content=ft.Column(
+                                controls=[
+                                    ft.Row(
+                                        [
+                                            ft.TextField(
+                                                label="Total Cost",
+                                                text_size=txt_size,
+                                                height=field_height,
+                                                expand=False,
+                                                width=250
+                                            ),
+                                            ft.RadioGroup(
+                                                content=ft.Row(
+                                                    [
+                                                        ft.Radio(value="5", label="5%"),
+                                                        ft.Radio(value="10", label="10%"),
+                                                        ft.Radio(value="15", label="15%"),
+                                                        ft.Radio(value="other", label="อื่น")
+                                                    ],
+                                                    spacing=0
+                                                )
+                                            ),
+                                            ft.TextField(
+                                                expand=1,
+                                                label="ระบุส่วนลด (บาท)",
+                                                text_size=txt_size,
+                                                height=field_height,
+                                                visible=False
+                                            )
+                                        ]
+                                    ),
+                                    ft.Row(
+                                        [
+                                            ft.TextField(
+                                                label="Discounted Total Cost",
+                                                text_size=txt_size,
+                                                height=field_height,
+                                                width=250
+                                            ),
+                                            ft.TextField(
+                                                expand=True,
+                                                label="บันทึกเพิ่มเติม",
+                                                text_size=txt_size,
+                                                height=field_height
+                                            )
+                                        ]
+                                    )
+                                ]
+                            )
+                        )
+                    ]
+                )
+            )
         ]
     )
-    
-    # Initialize class filter dropdown
-    class_filter.on_change = filter_data
-    update_filter_options()
 
-    return datatbl
-
-# For testing, you might want to add this if running standalone
 if __name__ == "__main__":
-    ft.app(target=lambda page: page.add(containers(page)))
+    def main(page: ft.Page):
+        page.add(containers(page))
+    ft.app(target=main)

@@ -1,18 +1,251 @@
 import flet as ft
+import sqlite3
+
+# Database execution function
+def Exec_Sql(sql):
+    conn = sqlite3.connect("Bannkruann.db")
+    c = conn.cursor()
+    c.execute(sql)
+    result = c.fetchall()
+    if len(result) > 0:
+        attb = [d[0] for d in c.description]
+        jsonlist = [dict(zip(attb, item)) for item in result]
+    else:
+        jsonlist = result
+    conn.commit()
+    conn.close()
+    return jsonlist
+
+def max_id(data, id_name):
+    maxitem = None
+    maxvalue = -1
+    for s in data:
+        if int(s[id_name]) > maxvalue:
+            maxvalue = int(s[id_name])
+            maxitem = s
+    return maxitem
 
 def containers(page):
-    # Define color scheme (placeholders, assuming these are defined in page)
-    navy_blue = page.navy_blue if hasattr(page, 'navy_blue') else "#003087"
-    yellow = page.yellow if hasattr(page, 'yellow') else "#FFC107"
-    grey = page.grey if hasattr(page, 'grey') else "#E0E0E0"
-    white = page.white if hasattr(page, 'white') else "#FFFFFF"
-    darkgrey = page.darkgrey if hasattr(page, 'darkgrey') else "#616161"
+    # Define color scheme
+    navy_blue = "#003087"
+    yellow = "#FFC107"
+    grey = "#E0E0E0"
+    white = "#FFFFFF"
+    darkgrey = "#616161"
 
     # Constants for text size and field height
     txt_size = 13
     field_height = 40
 
-    return ft.Column(
+    # Fetch student data from the database
+    student_sql = "SELECT S_ID, Name, SurName, Nick FROM Student ORDER BY S_ID DESC"
+    student_data = Exec_Sql(student_sql)
+
+    # Select the student with the maximum S_ID (last student)
+    last_student = max_id(student_data, "S_ID") if student_data else None
+
+    # Variables to hold student info
+    student_id_text = ft.Text(
+        str(last_student["S_ID"]) if last_student else "1234",
+        color=navy_blue,
+        size=txt_size
+    )
+    name_text = ft.Text(
+        last_student["Name"] if last_student else "เด็กชาย",
+        color=navy_blue,
+        size=txt_size
+    )
+    surname_text = ft.Text(
+        last_student["SurName"] if last_student else "นามสกุล",
+        color=navy_blue,
+        size=txt_size
+    )
+    nickname_text = ft.Text(
+        last_student["Nick"] if last_student else "ชื่อเล่น",
+        color=navy_blue,
+        size=txt_size
+    )
+
+    # Search input field for filtering students
+    search_input = ft.TextField(
+        label="ค้นหา: ชื่อ นามสกุล หรือ ชื่อเล่น",
+        bgcolor=white,
+        visible=False,
+        on_change=lambda e: update_search_results(e.control.value)
+    )
+
+    # Search results container
+    search_results = ft.Column(visible=False, scroll="auto", height=150)
+
+    # Fetch course data from the database
+    course_sql = "SELECT C_ID, Class, Day, Period, Subject, Cost FROM Course ORDER BY C_ID"
+    course_data = Exec_Sql(course_sql)
+    filtered_course_data = course_data.copy()
+
+    # Track selected courses
+    selected_course_ids = set()
+
+    # Populate dropdown options from course data
+    class_options = sorted(list(set(course["Class"] for course in course_data if course["Class"])))
+    day_options = sorted(list(set(course["Day"] for course in course_data if course["Day"])))
+
+    # Dropdowns for filtering courses
+    class_dropdown = ft.Dropdown(
+        options=[ft.dropdown.Option("ทั้งหมด")] + [ft.dropdown.Option(opt) for opt in class_options],
+        bgcolor=white,
+        expand=True,
+        width=250,
+        label="ห้องเรียน",
+        value="ทั้งหมด",
+        on_change=lambda e: filter_courses()
+    )
+    day_dropdown = ft.Dropdown(
+        options=[ft.dropdown.Option("ทั้งหมด")] + [ft.dropdown.Option(opt) for opt in day_options],
+        bgcolor=white,
+        expand=True,
+        width=250,
+        label="วันเรียน",
+        value="ทั้งหมด",
+        on_change=lambda e: filter_courses()
+    )
+
+    # Course table
+    course_table = ft.ListView(
+        controls=[ft.DataTable(
+            column_spacing=5,
+            columns=[
+                ft.DataColumn(
+                    ft.Checkbox(
+                        value=False,
+                        on_change=lambda e: toggle_all_selections(e)
+                    )
+                ),
+                ft.DataColumn(ft.Text("รหัสคอร์ส", size=txt_size)),
+                ft.DataColumn(ft.Text("ห้องเรียน", size=txt_size)),
+                ft.DataColumn(ft.Text("วัน", size=txt_size)),
+                ft.DataColumn(ft.Text("ช่วงเวลา", size=txt_size)),
+                ft.DataColumn(ft.Text("วิชา", size=txt_size)),
+                ft.DataColumn(ft.Text("ราคา", size=txt_size)),
+            ],
+            rows=[]
+        )],
+        expand=True,
+        height=240,
+        auto_scroll=False
+    )
+
+    # Functions for search functionality
+    def toggle_search_panel():
+        search_input.visible = not search_input.visible
+        search_results.visible = not search_results.visible
+        if search_input.visible:
+            search_input.value = ""
+            update_search_results("")
+        else:
+            search_results.controls.clear()
+        page.update()
+
+    def update_search_results(search_text):
+        search_results.controls.clear()
+        if not student_data:
+            search_results.controls.append(ft.Text("ไม่มีข้อมูลนักเรียนในฐานข้อมูล"))
+        else:
+            filtered_students = [
+                s for s in student_data
+                if (search_text.lower() in str(s["Name"]).lower() or
+                    search_text.lower() in str(s["SurName"]).lower() or
+                    search_text.lower() in str(s["Nick"]).lower())
+            ]
+            if not filtered_students:
+                search_results.controls.append(ft.Text("ไม่พบนักเรียนที่ตรงกับการค้นหา"))
+            else:
+                for student in filtered_students:
+                    search_results.controls.append(
+                        ft.TextButton(
+                            text=f"{student['Name']} {student['SurName']} ({student['Nick']}) - ID: {student['S_ID']}",
+                            on_click=lambda e, s_id=student["S_ID"]: select_student(s_id)
+                        )
+                    )
+        page.update()
+
+    def select_student(s_id):
+        selected_student = next((s for s in student_data if s["S_ID"] == s_id), None)
+        if selected_student:
+            student_id_text.value = str(selected_student["S_ID"])
+            name_text.value = selected_student["Name"]
+            surname_text.value = selected_student["SurName"]
+            nickname_text.value = selected_student["Nick"]
+        search_input.visible = False
+        search_results.visible = False
+        search_results.controls.clear()
+        page.update()
+
+    # Function to update selected course IDs
+    def update_selection(e, cid):
+        if e.control.value:
+            selected_course_ids.add(cid)
+        elif cid in selected_course_ids:
+            selected_course_ids.remove(cid)
+        update_header_checkbox()
+        page.update()
+
+    # Function to toggle all selections
+    def toggle_all_selections(e):
+        nonlocal filtered_course_data
+        filtered_cids = {course["C_ID"] for course in filtered_course_data}
+        
+        if e.control.value:
+            selected_course_ids.update(filtered_cids)
+        else:
+            selected_course_ids.difference_update(filtered_cids)
+        
+        filter_courses()
+
+    # Function to update the header checkbox state
+    def update_header_checkbox():
+        filtered_cids = {course["C_ID"] for course in filtered_course_data}
+        all_selected = filtered_cids and filtered_cids.issubset(selected_course_ids)
+        course_table.controls[0].columns[0].label.value = all_selected
+        page.update()
+
+    # Function to filter courses and update the table
+    def filter_courses():
+        nonlocal filtered_course_data
+        selected_class = class_dropdown.value
+        selected_day = day_dropdown.value
+
+        # Filter the course data
+        filtered_course_data = course_data.copy()
+        if selected_class != "ทั้งหมด":
+            filtered_course_data = [course for course in filtered_course_data if course["Class"] == selected_class]
+        if selected_day != "ทั้งหมด":
+            filtered_course_data = [course for course in filtered_course_data if course["Day"] == selected_day]
+
+        # Update the table rows with preserved checkbox states
+        course_table.controls[0].rows = [
+            ft.DataRow(cells=[
+                ft.DataCell(ft.Checkbox(
+                    value=course["C_ID"] in selected_course_ids,
+                    on_change=lambda e, cid=course["C_ID"]: update_selection(e, cid)
+                )),
+                ft.DataCell(ft.Text(course["C_ID"], size=txt_size)),
+                ft.DataCell(ft.Text(course["Class"], size=txt_size)),
+                ft.DataCell(ft.Text(course["Day"], size=txt_size)),
+                ft.DataCell(ft.Text(course["Period"], size=txt_size)),
+                ft.DataCell(ft.Text(course["Subject"], size=txt_size)),
+                ft.DataCell(ft.Text(str(course["Cost"]), size=txt_size)),
+            ]) for course in filtered_course_data
+        ]
+        # Scroll to top after population (only if table is on the page)
+        if course_table.page is not None:
+            course_table.scroll_to(offset=0, duration=0)
+        update_header_checkbox()
+
+    # Populate the table initially without scrolling yet
+    filter_courses()
+
+    # Main UI layout
+    ui = ft.Column(
         controls=[
             # Course Selection Container
             ft.Container(
@@ -21,7 +254,6 @@ def containers(page):
                 content=ft.Column(
                     spacing=0,
                     controls=[
-                        # Header
                         ft.Container(
                             height=40,
                             padding=ft.padding.only(10, 10, 10, 10),
@@ -36,7 +268,6 @@ def containers(page):
                                 ]
                             )
                         ),
-                        # Course Selection Body
                         ft.Container(
                             bgcolor=grey,
                             padding=ft.padding.only(10, 10, 10, 10),
@@ -45,33 +276,30 @@ def containers(page):
                                     ft.Row(
                                         [
                                             ft.Text("รหัสนักเรียน :", color=navy_blue, size=txt_size),
-                                            ft.Text("", color=navy_blue, size=txt_size)  # Placeholder for student ID
+                                            student_id_text,
+                                            ft.Text("ชื่อ :", color=navy_blue, size=txt_size),
+                                            name_text,
+                                            ft.Text("", color=navy_blue, size=txt_size),
+                                            surname_text,
+                                            ft.Text("(", color=navy_blue, size=txt_size),
+                                            nickname_text,
+                                            ft.Text(")", color=navy_blue, size=txt_size),
+                                            ft.IconButton(
+                                                icon="SEARCH",
+                                                on_click=lambda e: toggle_search_panel()
+                                            )
                                         ],
-                                        alignment=ft.MainAxisAlignment.END
+                                        alignment=ft.MainAxisAlignment.START,
                                     ),
+                                    search_input,
+                                    search_results,
                                     ft.Row(
                                         [
-                                            ft.Dropdown(
-                                                options=[],
-                                                bgcolor=white,
-                                                expand=True,
-                                                label="ห้องเรียน",
-                                                value="ทั้งหมด"
-                                            ),
-                                            ft.Dropdown(
-                                                options=[],
-                                                bgcolor=white,
-                                                expand=True,
-                                                label="วันเรียน",
-                                                value="ทั้งหมด"
-                                            )
+                                            class_dropdown,
+                                            day_dropdown
                                         ]
                                     ),
-                                    ft.Column(
-                                        scroll="auto",
-                                        height=240,
-                                        controls=[]  # Placeholder for course table
-                                    ),
+                                    course_table,
                                     ft.Row(
                                         [
                                             ft.TextField(
@@ -85,7 +313,7 @@ def containers(page):
                                                 height=field_height,
                                                 visible=False,
                                                 expand=True
-                                            )  # Hidden field for selected course IDs
+                                            )
                                         ]
                                     )
                                 ]
@@ -101,7 +329,6 @@ def containers(page):
                 bgcolor=grey,
                 content=ft.Column(
                     controls=[
-                        # Header
                         ft.Container(
                             bgcolor=yellow,
                             height=40,
@@ -122,7 +349,6 @@ def containers(page):
                                 ]
                             )
                         ),
-                        # Payment Info Body
                         ft.Container(
                             padding=ft.padding.only(10, 0, 10, 10),
                             content=ft.Column(
@@ -181,8 +407,16 @@ def containers(page):
         ]
     )
 
-# Example usage (for testing purposes)
+    return ui
+
+# Main function to set up the page
+def main(page: ft.Page):
+    page.title = "Course Enrollment"
+    ui = containers(page)
+    page.add(ui)
+    # Scroll to top after adding the UI to the page
+    ui.controls[0].content.controls[1].content.controls[4].scroll_to(offset=0, duration=0)
+    page.update()
+
 if __name__ == "__main__":
-    def main(page: ft.Page):
-        page.add(containers(page))
     ft.app(target=main)
